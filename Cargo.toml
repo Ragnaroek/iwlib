@@ -1,0 +1,11 @@
+[package]
+name = "iwlib"
+version = "0.1.0"
+edition = "2021"
+description = "Iron-Wolf common functionality"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = { version = "0.2", features = ["serde-serialize"] }
