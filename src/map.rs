@@ -1,4 +1,10 @@
+use std::io::{Seek, SeekFrom, Read};
+use serde::{Serialize, Deserialize};
+
 use super::util;
+
+pub const MAP_PLANES: usize = 2;
+pub const NUM_MAPS: usize = 60;
 
 pub fn rlew_expand(source: &Vec<u8>, len: usize, rlew_tag: u16) -> Vec<u8> {
 	let mut expanded = Vec::with_capacity(len);
@@ -102,4 +108,94 @@ pub fn carmack_expand(data: &[u8], len: usize) -> Vec<u8> {
 	}
 
 	expanded
+}
+
+// map stuff
+
+#[derive(Serialize, Deserialize)]
+pub struct MapData {
+	pub segs: [Vec<u8>; MAP_PLANES]
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MapType {
+	pub plane_start: [i32; 3],
+	pub plane_length: [u16; 3],
+	pub width: u16,
+	pub height: u16,
+	pub name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MapFileType {
+	pub rlew_tag: u16,
+	pub header_offsets: Vec<i32>,
+}
+
+pub fn load_map<M: Seek + Read>(map_data: &mut M, map_headers: &Vec<MapType>, map_offsets: &MapFileType, mapnum: usize) -> Result<MapData, String>{
+ 
+	let mut segs = [Vec::with_capacity(0), Vec::with_capacity(0)];
+
+	for plane in 0..MAP_PLANES {
+		let pos = map_headers[mapnum].plane_start[plane];
+		let compressed = map_headers[mapnum].plane_length[plane];
+
+		let mut buf = vec![0; compressed as usize];
+		map_data.seek(SeekFrom::Start(pos as u64)).expect("map seek failed");
+		map_data.read_exact(&mut buf).expect("map read failed");
+
+		let mut reader = util::new_data_reader(&buf);
+		let expanded_len = reader.read_u16();		
+
+		let carmack_expanded = carmack_expand(reader.unread_bytes(), expanded_len as usize);
+		let expanded = rlew_expand(&carmack_expanded, 64*64*2, map_offsets.rlew_tag);
+		segs[plane] = expanded;
+	}
+
+	Ok(MapData{segs}) 
+}
+
+pub fn load_map_headers(bytes: &Vec<u8>, offsets: MapFileType) -> Result<(MapFileType, Vec<MapType>), String> {
+	let mut headers = Vec::with_capacity(NUM_MAPS);
+	for i in 0..NUM_MAPS {
+		let pos = offsets.header_offsets[i];
+		if pos < 0 {
+			// skip sparse maps
+			continue;
+		}
+
+		let mut reader = util::new_data_reader_with_offset(&bytes, pos as usize);
+
+		let mut plane_start = [0; 3];
+		for j in 0..3 {
+			plane_start[j] = reader.read_i32();
+		}
+
+		let mut plane_length = [0; 3];
+		for j in 0..3 {
+			plane_length[j] = reader.read_u16();
+		}
+
+		let width = reader.read_u16();
+		let height = reader.read_u16();
+		let mut name = reader.read_utf8_string(16);
+		name.retain(|c| c != '\0');
+
+		headers.push(MapType{plane_start, plane_length, width, height, name});
+	}
+	Ok((offsets, headers))
+}
+
+pub fn load_map_offsets(bytes: &Vec<u8>) -> Result<MapFileType, String> {	
+	let mut reader = util::new_data_reader(&bytes);
+	let rlew_tag = reader.read_u16();
+	
+	let mut header_offsets = Vec::with_capacity(100);
+	for _ in 0..100 {
+		header_offsets.push(reader.read_i32());
+	}
+	Ok(MapFileType {
+		rlew_tag,
+		header_offsets,
+	})
 }
