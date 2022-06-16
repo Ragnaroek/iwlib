@@ -23,9 +23,15 @@ extern "C" {
 }
 
 #[wasm_bindgen]
-pub fn load_map(map_data_js: &JsValue, map_headers_js: &JsValue, map_offsets_js: &JsValue, mapnum: usize) -> JsValue {
+pub fn load_map(map_data_js: &Buffer, map_headers_js: &JsValue, map_offsets_js: &JsValue, mapnum: usize) -> JsValue {
 	console_error_panic_hook::set_once();
-	let map_data : Vec<u8> = map_data_js.into_serde().unwrap();
+
+    let map_data: Vec<u8> = Uint8Array::new_with_byte_offset_and_length(
+        &map_data_js.buffer(),
+        map_data_js.byte_offset(),
+        map_data_js.length(),
+    ).to_vec();
+
 	let map_headers : Vec<map::MapType> = map_headers_js.into_serde().unwrap();
 	let map_offsets : map::MapFileType = map_offsets_js.into_serde().unwrap();
 	let result = map::load_map(&mut Cursor::new(map_data), &map_headers, &map_offsets, mapnum).unwrap();
@@ -44,5 +50,20 @@ pub fn load_map_offsets(buffer: &Buffer) -> JsValue {
     ).to_vec();
 
 	let result = map::load_map_offsets(&bytes).unwrap();
+	JsValue::from_serde(&result).unwrap()
+}
+
+#[wasm_bindgen]
+pub fn load_map_headers(buffer: &Buffer, offsets_js: &JsValue) -> JsValue {
+	console_error_panic_hook::set_once();
+	
+	let bytes: Vec<u8> = Uint8Array::new_with_byte_offset_and_length(
+        &buffer.buffer(),
+        buffer.byte_offset(),
+        buffer.length(),
+    ).to_vec();
+
+	let offsets: map::MapFileType = offsets_js.into_serde().unwrap();
+	let (_, result) = map::load_map_headers(&bytes, offsets).unwrap();
 	JsValue::from_serde(&result).unwrap()
 }

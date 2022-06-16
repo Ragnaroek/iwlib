@@ -6,7 +6,8 @@ use super::util;
 pub const MAP_PLANES: usize = 2;
 pub const NUM_MAPS: usize = 60;
 
-pub fn rlew_expand(source: &Vec<u8>, len: usize, rlew_tag: u16) -> Vec<u8> {
+pub fn rlew_expand(source: &[u8], len: usize, rlew_tag: u16) -> Vec<u16> {
+	
 	let mut expanded = Vec::with_capacity(len);
 
 	let trail = source.len() % 2 != 0;
@@ -16,16 +17,12 @@ pub fn rlew_expand(source: &Vec<u8>, len: usize, rlew_tag: u16) -> Vec<u8> {
 	loop {
 		let value = reader.read_u16();
 		if value != rlew_tag {
-			let bytes = value.to_le_bytes();
-			expanded.push(bytes[0]);
-			expanded.push(bytes[1]);
+			expanded.push(value);
 		} else {
 			let count = reader.read_u16();
 			let value = reader.read_u16();
-			let bytes = value.to_le_bytes();
 			for _ in 0..count {
-				expanded.push(bytes[0]);
-				expanded.push(bytes[1]);
+				expanded.push(value);
 			}
 		}
 
@@ -35,7 +32,11 @@ pub fn rlew_expand(source: &Vec<u8>, len: usize, rlew_tag: u16) -> Vec<u8> {
 	}
 	
 	if trail {
-		expanded.push(source[source.len()-1]);
+		expanded.push(source[source.len()-1] as u16);
+	}
+
+	while expanded.len() < len {
+		expanded.push(0);
 	}
 
 	expanded
@@ -87,7 +88,7 @@ pub fn carmack_expand(data: &[u8], len: usize) -> Vec<u8> {
 				offset <<= 8;
 				offset |= offset_low as usize;
 
-				let mut copy_ptr = (offset-1) * 2;
+				let mut copy_ptr = offset * 2;
 				length -= word_count as usize;
 				for _ in 0..(word_count as usize * 2) {
 					expanded.push(expanded[copy_ptr]);
@@ -107,6 +108,10 @@ pub fn carmack_expand(data: &[u8], len: usize) -> Vec<u8> {
 		expanded.push(data[in_ptr]);
 	}
 
+	while expanded.len() < len {
+		expanded.push(0);
+	}
+
 	expanded
 }
 
@@ -114,7 +119,7 @@ pub fn carmack_expand(data: &[u8], len: usize) -> Vec<u8> {
 
 #[derive(Serialize, Deserialize)]
 pub struct MapData {
-	pub segs: [Vec<u8>; MAP_PLANES]
+	pub segs: [Vec<u16>; MAP_PLANES]
 }
 
 #[derive(Serialize, Deserialize)]
@@ -147,8 +152,11 @@ pub fn load_map<M: Seek + Read>(map_data: &mut M, map_headers: &Vec<MapType>, ma
 		let mut reader = util::new_data_reader(&buf);
 		let expanded_len = reader.read_u16();		
 
-		let carmack_expanded = carmack_expand(reader.unread_bytes(), expanded_len as usize);
-		let expanded = rlew_expand(&carmack_expanded, 64*64*2, map_offsets.rlew_tag);
+		let remaining_bytes = reader.unread_bytes();
+
+		let carmack_expanded = carmack_expand(remaining_bytes, expanded_len as usize);
+		let expanded = rlew_expand(&carmack_expanded[2..], 64*64, map_offsets.rlew_tag);
+
 		segs[plane] = expanded;
 	}
 

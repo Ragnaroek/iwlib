@@ -1,13 +1,13 @@
 pub struct DataReader<'a> {
-	data: &'a Vec<u8>,
+	data: &'a [u8],
 	offset: usize,
 }
 
-pub fn new_data_reader(data: &Vec<u8>) -> DataReader {
+pub fn new_data_reader(data: &[u8]) -> DataReader {
 	new_data_reader_with_offset(data, 0)
 }
 
-pub fn new_data_reader_with_offset(data: &Vec<u8>, offset: usize) -> DataReader {
+pub fn new_data_reader_with_offset(data: &[u8], offset: usize) -> DataReader {
 	DataReader {
 		data,
 		offset
